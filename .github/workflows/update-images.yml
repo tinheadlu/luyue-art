@@ -1,0 +1,54 @@
+name: Update artwork manifest
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'images/**'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  update-manifest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Generate images.json
+        run: |
+          python - <<'PY'
+          import json, re
+          from pathlib import Path
+
+          groups = ['painting', 'printmaking', 'installation', 'digital-ai']
+          extensions = {'.jpg', '.jpeg', '.png', '.webp', '.gif', '.avif'}
+
+          def natural_key(path):
+              return [int(part) if part.isdigit() else part.lower()
+                      for part in re.split(r'(\d+)', path.name)]
+
+          data = {}
+          for group in groups:
+              folder = Path('images') / group
+              files = [p for p in folder.iterdir()
+                       if p.is_file() and p.suffix.lower() in extensions]
+              files.sort(key=natural_key)
+              data[group] = [p.as_posix() for p in files]
+
+          Path('images.json').write_text(
+              json.dumps(data, ensure_ascii=False, indent=2) + '\n',
+              encoding='utf-8'
+          )
+          PY
+      - name: Commit manifest if changed
+        run: |
+          if git diff --quiet -- images.json; then
+            echo "No artwork changes."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add images.json
+          git commit -m "Update artwork manifest"
+          git push
